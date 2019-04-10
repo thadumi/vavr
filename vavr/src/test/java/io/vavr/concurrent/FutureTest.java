@@ -35,7 +35,9 @@ import org.junit.rules.TestWatcher;
 import org.junit.runner.Description;
 
 import java.io.IOException;
+import java.security.Permission;
 import java.time.LocalDateTime;
+import java.util.Arrays;
 import java.util.NoSuchElementException;
 import java.util.Spliterator;
 import java.util.concurrent.*;
@@ -457,7 +459,7 @@ public class FutureTest extends AbstractValueTest {
 
     @Test(expected = NoSuchElementException.class)
     public void shouldFailReduceEmptySequence() {
-        Future.<Integer> reduce(List.empty(), (i1, i2) -> i1 + i2);
+        Future.<Integer> reduce(List.empty(), Integer::sum);
     }
 
     @Test
@@ -473,9 +475,13 @@ public class FutureTest extends AbstractValueTest {
     public void shouldReduceWithErrorIfSequenceOfFuturesContainsOneError() {
         final Future<Integer> future = Future.reduce(
                 List.of(Future.of(zZz(13)), Future.of(zZz(new Error()))),
-                (i1, i2) -> i1 + i2
+                Integer::sum
         ).await();
         assertFailed(future, Error.class);
+    }
+
+    @Test
+    public void pippo() {
     }
 
     // -- static run()
@@ -609,7 +615,7 @@ public class FutureTest extends AbstractValueTest {
         assertThat(future.getCause().get()).isInstanceOf(TimeoutException.class);
         assertThat(future.getCause().get().getMessage()).isEqualTo("timeout after 100 milliseconds");
     }
-    
+
     @Test
     public void shouldHandleInterruptedExceptionCorrectlyInAwait() {
         // the Future should never be completed as long as the InterruptedException is rethrown by the Try...
@@ -887,7 +893,7 @@ public class FutureTest extends AbstractValueTest {
     public void shouldBeFailed() {
         assertThat(Future.failed(new Exception()).isFailure()).isTrue();
     }
-    
+
     // -- onComplete()
 
     @Test
@@ -1176,6 +1182,39 @@ public class FutureTest extends AbstractValueTest {
     // TODO: method calls and compare it with Scala
 
     // TODO: also test what happens when FutureImpl.createThread throws a SecurityException
+
+
+    @Test
+    public void shouldHaveASecurityException() {
+        System.setSecurityManager(new SecurityManager(){
+            @Override
+            public void checkAccess(Thread t) {
+                // check the request for access is coming form the FutureImpl#updateThread
+                final Function1<Thread, Boolean> accessRequestedFromAFuture =
+                        thread -> Stream.of(thread.getStackTrace())
+                                .map(StackTraceElement::toString)
+                                .filter(s -> s.contains("io.vavr.concurrent.FutureImpl.updateThread"))
+                                .headOption()
+                                .isDefined();
+
+                if(accessRequestedFromAFuture.apply(t)) {
+                    // if a call is coming from a Future then the
+                    // System.out.println("Security manager: going to throw a SecurityException");
+                    throw new SecurityException("security exception for io.vavr.concurrent.FutureImpl.updateThread");
+                }
+            }
+
+            @Override
+            public void checkPermission(Permission perm) {
+
+            }
+        });
+        final Future<List<Integer>> future = Future.<Integer> of(zZz(2))
+                .zipWith(Future.of(zZz(0).andThen(i -> 2/i)), List::of);
+        future.await();
+        waitUntil(future::isFailure);
+        assertThat(future.getCause().get().getClass()).isEqualTo(ArithmeticException.class);
+    }
 
     // -- map()
 
