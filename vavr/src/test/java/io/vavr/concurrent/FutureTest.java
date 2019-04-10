@@ -480,10 +480,6 @@ public class FutureTest extends AbstractValueTest {
         assertFailed(future, Error.class);
     }
 
-    @Test
-    public void pippo() {
-    }
-
     // -- static run()
 
     @Test
